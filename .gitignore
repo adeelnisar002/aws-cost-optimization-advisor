@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+.venv*/
+env*/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python packaging / tools
+.pytest_cache/
+.mypy_cache/
+.cache/
+.coverage
+htmlcov/
+.tox/
+
+# Node / front-end (if any)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Cursor / misc
+.cursor/

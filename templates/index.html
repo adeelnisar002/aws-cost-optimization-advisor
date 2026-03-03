@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AWS Cost Analysis Agent</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --primary-700: #1d4ed8;
+      --danger: #dc2626;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.07);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(1200px 420px at -12% -18%, rgba(99, 102, 241, 0.14), transparent 50%),
+        radial-gradient(1000px 420px at 110% -10%, rgba(37, 99, 235, 0.16), transparent 55%),
+        linear-gradient(180deg, #eef4ff 0%, var(--bg) 280px);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 18px 40px;
+    }
+
+    .hero {
+      margin-bottom: 16px;
+      background: linear-gradient(120deg, #0f172a 0%, #1d4ed8 60%, #2563eb 100%);
+      color: #fff;
+      border-radius: var(--radius-lg);
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      padding: 20px 22px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: inline-block;
+      margin-bottom: 10px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      border: 1px solid #cbd5e1;
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.45;
+      outline: none;
+      resize: vertical;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      background: #fff;
+      color: var(--text);
+    }
+
+    textarea:focus {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+    }
+
+    .actions {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%);
+      color: #fff;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.06s;
+    }
+
+    button:hover { background: linear-gradient(90deg, #1d4ed8 0%, #1e40af 100%); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.75; cursor: not-allowed; }
+
+    .loading {
+      display: none;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .result-header h2 {
+      margin: 0;
+      font-size: 23px;
+    }
+    .result-meta {
+      margin: 6px 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-pill {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: #0f172a;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%);
+      padding: 12px;
+    }
+
+    .metric .label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .metric .value {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+
+    .metric .value.negative { color: var(--danger); }
+
+    .summary {
+      border: 1px solid var(--border);
+      border-left: 4px solid #93c5fd;
+      border-radius: 10px;
+      padding: 12px;
+      margin: 10px 0 14px;
+      background: #f8fbff;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead tr {
+      background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    tbody tr:hover td {
+      background: #f8fbff;
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .error-box {
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #991b1b;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    ul.warnings {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 940px) {
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 620px) {
+      .container { padding: 20px 12px 28px; }
+      .hero h1 { font-size: 26px; }
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+      .result-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="hero">
+      <h1>AWS Cost Analysis Agent</h1>
+    </div>
+
+    <div class="panel">
+      <form method="post" action="/analyze" id="analyze-form">
+        <label for="query">Ask the agent</label>
+        <textarea id="query" name="query">{{ query }}</textarea>
+        <div class="actions">
+          <button type="submit" id="submit-btn">Run Analysis</button>
+          <span class="loading" id="loading-text">Running analysis...</span>
+        </div>
+      </form>
+    </div>
+
+    {% if result %}
+      <div class="panel">
+        <div class="result-header">
+          <h2>Result</h2>
+          <span class="status-pill">{{ "Success" if result.ok else "Error" }}</span>
+        </div>
+        <div class="result-meta">
+          Billing month: <strong>{{ result.billing_month or "N/A" }}</strong>
+          {% if result.billing_period %} ({{ result.billing_period }}){% endif %}
+          &nbsp;|&nbsp;
+          Forecast month: <strong>{{ result.forecast_month or "N/A" }}</strong>
+          {% if result.forecast_period %} ({{ result.forecast_period }}){% endif %}
+        </div>
+
+        {% if result.ok %}
+          <div class="metrics">
+            <div class="metric">
+              <span class="label">Gross Spend ({{ result.billing_month or "Billing Month" }})</span>
+              <span class="value">{{ result.display_gross_spend }}</span>
+            </div>
+            <div class="metric">
+              <span class="label">Net Spend ({{ result.billing_month or "Billing Month" }})</span>
+              <span class="value">{{ result.display_total_monthly_spend }}</span>
+            </div>
+            <div class="metric">
+              <span class="label">Forecast ({{ result.forecast_month or "Next Month" }})</span>
+              <span class="value">{{ result.display_forecast_next_month }}</span>
+            </div>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <span class="label">Month-to-Date</span>
+              <span class="value">{{ result.display_month_to_date_spend }}</span>
+              <div class="muted">{{ result.month_to_date_period or "Current month period" }}</div>
+            </div>
+            <div class="metric">
+              <span class="label">Same Period Last Month</span>
+              <span class="value">{{ result.display_same_period_last_month_spend }}</span>
+              <div class="muted">{{ result.same_period_last_month_period or "Prior month period" }}</div>
+            </div>
+            <div class="metric">
+              <span class="label">MTD Change</span>
+              <span class="value {% if result.month_to_date_change_pct > 0 %}negative{% endif %}">
+                {{ "%.2f"|format(result.month_to_date_change_pct) }}%
+              </span>
+              <div class="muted">vs same period last month</div>
+            </div>
+          </div>
+
+          <div class="summary">
+            <strong>Summary:</strong> {{ result.summary }}
+          </div>
+
+          <h3>Top Services</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th class="num">Spend (USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for svc in result.top_services %}
+                  <tr>
+                    <td>{{ svc.service }}</td>
+                    <td class="num">{{ svc.display_spend }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="error-box">
+            <strong>Error:</strong> {{ result.error }}
+            <div>{{ result.summary }}</div>
+          </div>
+        {% endif %}
+
+        {% if result.errors and result.errors|length > 0 %}
+          <div>
+            <strong class="muted">Pipeline warnings</strong>
+            <ul class="warnings">
+              {% for e in result.errors %}
+                <li>{{ e }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <script>
+    (function () {
+      var form = document.getElementById("analyze-form");
+      var submitBtn = document.getElementById("submit-btn");
+      var loadingText = document.getElementById("loading-text");
+      if (!form || !submitBtn || !loadingText) {
+        return;
+      }
+
+      form.addEventListener("submit", function () {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Running...";
+        loadingText.style.display = "inline";
+      });
+    })();
+  </script>
+</body>
+</html>
+
