@@ -18,6 +18,23 @@ class CostDataProcessor:
     """Processes raw MCP cost data into compact structured summaries."""
 
     @staticmethod
+    def _canonical_service_name(service_name: str) -> str:
+        """Normalize Cost Explorer service labels into stable service-family names."""
+        name = (service_name or "").strip()
+        lower = name.lower()
+
+        # CE often splits EC2 into multiple labels (e.g., "Amazon Elastic Compute
+        # Cloud - Compute", "EC2 - Other"). We roll these into one EC2 family line.
+        if (
+            "elastic compute cloud" in lower
+            or lower.startswith("ec2 -")
+            or lower == "amazon ec2"
+            or lower == "ec2"
+        ):
+            return "Amazon EC2"
+        return name or "Unknown"
+
+    @staticmethod
     def _parse_mcp_result_text(mcp_response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Parse the MCP response which may have data in result[0].text as JSON string.
         
@@ -253,7 +270,8 @@ class CostDataProcessor:
                     continue
 
                 keys = group.get("Keys", [])
-                service_name = keys[0] if keys and len(keys) > 0 else "Unknown"
+                raw_service_name = keys[0] if keys and len(keys) > 0 else "Unknown"
+                service_name = CostDataProcessor._canonical_service_name(raw_service_name)
 
                 metrics = group.get("Metrics", {})
                 amount = CostDataProcessor._extract_amount_from_metric_map(

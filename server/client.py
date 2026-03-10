@@ -151,6 +151,7 @@ class MCPClient:
         granularity: str = "MONTHLY",
         metric: str = "NetUnblendedCost",
         group_by: Optional[str] = "SERVICE",
+        filter_expr: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Use the Billing MCP Cost Explorer tool for a cost breakdown by service.
 
@@ -190,6 +191,8 @@ class MCPClient:
                 arguments["group_by"] = json.dumps(
                     [{"Type": "DIMENSION", "Key": group_by}]
                 )
+            if filter_expr:
+                arguments["filter"] = json.dumps(filter_expr)
 
             return await self.call_tool(
                 "cost-explorer",
@@ -199,7 +202,12 @@ class MCPClient:
             logger.error("get_cost_and_usage failed: %s", exc)
             return {"error": str(exc)}
 
-    async def get_cost_forecast(self, time_period: Dict[str, Any], granularity: str = "MONTHLY") -> Dict[str, Any]:
+    async def get_cost_forecast(
+        self,
+        time_period: Dict[str, Any],
+        granularity: str = "MONTHLY",
+        filter_expr: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Use the Billing MCP Cost Explorer tool for a cost forecast.
 
         Tool schema expects:
@@ -218,18 +226,124 @@ class MCPClient:
                 end_date,
                 granularity,
             )
-            return await self.call_tool(
-                "cost-explorer",
-                {
-                    "operation": "getCostForecast",
-                    "metric": "UNBLENDED_COST",
-                    "granularity": granularity,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                },
-            )
+            arguments: Dict[str, Any] = {
+                "operation": "getCostForecast",
+                "metric": "UNBLENDED_COST",
+                "granularity": granularity,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+            if filter_expr:
+                arguments["filter"] = json.dumps(filter_expr)
+            return await self.call_tool("cost-explorer", arguments)
         except Exception as exc:
             logger.error("get_cost_forecast failed: %s", exc)
+            return {"error": str(exc)}
+
+    async def list_recommendation_summaries(
+        self,
+        group_by: str = "ResourceType",
+        filters: Optional[Dict[str, Any]] = None,
+        max_results: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Use the Billing MCP Cost Optimization tool to list recommendation summaries.
+
+        This wraps the `cost-optimization` MCP tool with the
+        `list_recommendation_summaries` operation.
+        """
+        try:
+            args: Dict[str, Any] = {
+                "operation": "list_recommendation_summaries",
+                "group_by": group_by,
+            }
+            if filters:
+                # Cost Optimization expects filters as JSON-encoded dict.
+                args["filters"] = json.dumps(filters)
+            if max_results is not None:
+                args["max_results"] = max_results
+
+            logger.info(
+                (
+                    "Requesting cost-optimization list_recommendation_summaries "
+                    "group_by=%s filters=%s max_results=%s"
+                ),
+                group_by,
+                filters,
+                max_results,
+            )
+            return await self.call_tool("cost-optimization", args)
+        except Exception as exc:
+            logger.error("list_recommendation_summaries failed: %s", exc)
+            return {"error": str(exc)}
+
+    async def list_recommendations(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        max_results: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Use the Billing MCP Cost Optimization tool to list detailed recommendations.
+
+        This wraps the `cost-optimization` MCP tool with the
+        `list_recommendations` operation.
+        """
+        try:
+            args: Dict[str, Any] = {"operation": "list_recommendations"}
+            if filters:
+                args["filters"] = json.dumps(filters)
+            if max_results is not None:
+                args["max_results"] = max_results
+
+            logger.info(
+                "Requesting cost-optimization list_recommendations with filters=%s max_results=%s",
+                filters,
+                max_results,
+            )
+            return await self.call_tool("cost-optimization", args)
+        except Exception as exc:
+            logger.error("list_recommendations failed: %s", exc)
+            return {"error": str(exc)}
+
+    async def get_compute_optimizer_recommendations(
+        self,
+        operation: str,
+        filters: Optional[Dict[str, Any]] = None,
+        max_results: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Get recommendations from the compute-optimizer MCP tool."""
+        try:
+            args: Dict[str, Any] = {"operation": operation}
+            if filters:
+                args["filters"] = json.dumps(filters)
+            if max_results is not None:
+                args["max_results"] = max_results
+
+            logger.info(
+                "Requesting compute-optimizer %s with filters=%s max_results=%s",
+                operation,
+                filters,
+                max_results,
+            )
+            return await self.call_tool("compute-optimizer", args)
+        except Exception as exc:
+            logger.error("get_compute_optimizer_recommendations failed: %s", exc)
+            return {"error": str(exc)}
+
+    async def get_recommendation_details(
+        self,
+        recommendation_id: str,
+    ) -> Dict[str, Any]:
+        """Get detailed recommendation context from the rec-details MCP tool."""
+        try:
+            logger.info(
+                "Requesting rec-details for recommendation_id=%s",
+                recommendation_id,
+            )
+            return await self.call_tool(
+                "rec-details",
+                {"recommendation_id": recommendation_id},
+            )
+        except Exception as exc:
+            logger.error("get_recommendation_details failed: %s", exc)
             return {"error": str(exc)}
 
     async def query_session_sql(

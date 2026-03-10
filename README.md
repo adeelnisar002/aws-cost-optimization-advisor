@@ -1,24 +1,27 @@
-# AWS Cost Analysis Agent (LangGraph + AWS Billing MCP)
+# AWS Cost Analysis + Remediation Agent
 
-This project is an **AWS cost analysis agent** built with **LangGraph** and an **AWS Billing MCP server**. It orchestrates multiple AWS Cost Explorer and forecasting calls, then produces a natural‑language analysis of your AWS spend.
+This project provides a Flask app backed by two LangGraph workflows:
 
-The core orchestration logic lives in `graph/manager_graph.py` as a LangGraph workflow.
+- **Manager graph** (`graph/manager_graph.py`) for AWS cost analysis + forecast
+- **Remediation graph** (`graph/remediation_graph.py`) for actionable cost optimization recommendations
 
----
+It integrates with the AWS Billing & Cost Management MCP server and uses Groq for structured LLM outputs.
 
-## High‑Level Overview
+## What It Does
 
-- **Goal**: Given a user question about AWS costs (e.g. “Explain my AWS spend and forecast next month”), the agent:
-  - Discovers available AWS billing tools via MCP
-  - Fetches production cost data (monthly totals, MTD, same‑period‑last‑month, top services)
-  - Fetches a cost forecast for the next full month
-  - Runs an LLM‑based manager agent over that data to produce a human‑readable report
+For a user query like _"What are my top 5 AWS services by spend and forecast for next month?"_ the app:
 
----
+- Discovers available MCP tools
+- Pulls monthly + MTD cost data from Cost Explorer
+- Pulls next-month forecast
+- Returns structured analysis (with UI-friendly formatted fields)
+- Optionally derives remediation opportunities and fetches recommendation context from:
+  - Cost Optimization Hub (`cost-optimization`, `rec-details`)
+  - Compute Optimizer (`compute-optimizer`)
 
-## ManagerGraph Workflow (LangGraph)
+## Architecture
 
-The `ManagerGraph` is defined in `graph/manager_graph.py`. It is a `StateGraph(dict)` with the following nodes and edges:
+### 1) ManagerGraph (`graph/manager_graph.py`)
 
 ```mermaid
 flowchart LR
@@ -30,145 +33,123 @@ flowchart LR
     output_node --> END
 ```
 
-### Node‑by‑Node Behavior
+Key behavior:
 
-- **discover_tools_node**
-  - Checks AWS credentials via the billing MCP client
-  - Connects to the MCP server and discovers available AWS billing tools
-  - Writes `aws_credentials` and `discovered_tools` into the graph state
-  - Appends any errors to `errors`
+- Discovers tools and checks AWS credential usability
+- Computes:
+  - previous full month
+  - current MTD
+  - same-period-last-month
+- Queries Cost Explorer via MCP (`cost-explorer`)
+- Produces top 5 services, totals, MTD deltas, and next full month forecast
+- Runs `ManagerAgent` to produce summary output
 
-- **fetch_cost_node**
-  - Computes several date windows:
-    - Previous full billing month
-    - Current month‑to‑date (MTD)
-    - Same‑period‑last‑month (SPLM) aligned to current MTD days
-  - Uses MCP to call `get_cost_and_usage` multiple times:
-    - Monthly total (ungrouped, `NetUnblendedCost`)
-    - Service breakdown (grouped by `SERVICE`)
-    - MTD daily costs
-    - SPLM daily costs
-  - Processes responses with `CostDataProcessor` to derive:
-    - `total_monthly_spend`
-    - `gross_spend` and `credits_refunds`
-    - `top_services`
-    - `month_to_date_spend` and `same_period_last_month_spend`
-    - `month_to_date_change_pct`
-  - Stores everything in `state["cost_data"]`
+Supported analysis scopes:
 
-- **fetch_forecast_node**
-  - Computes the **next full month** window (start and end‑exclusive)
-  - Uses MCP to call `get_cost_forecast` with `DAILY` granularity
-  - Uses `CostDataProcessor.extract_forecast_total` to get a compact number
-  - Stores in `state["forecast_data"]`:
-    - `forecast_next_month`
-    - `forecast_month`
-    - `forecast_period`
+- `full_account` (default), `ec2`, `s3`, `rds`, `lambda`, `ebs`, `networking`
 
-- **analyze_node**
-  - Reads:
-    - `user_query` (defaults to `"Analyze my AWS costs."` if missing)
-    - `cost_data`
-    - `forecast_data`
-  - Calls `ManagerAgent.analyze(user_query, cost_data, forecast_data)`
-  - Stores the LLM’s response in `state["analysis_result"]`
+### 2) RemediationGraph (`graph/remediation_graph.py`)
 
-- **output_node**
-  - Final pass‑through node; currently just logs and returns the accumulated state
-
----
-
-## How the Graph Is Invoked
-
-The helper method `ManagerGraph.invoke` constructs the initial state and runs the compiled LangGraph:
-
-```python
-from graph.manager_graph import ManagerGraph
-
-graph = ManagerGraph()
-final_state = await graph.invoke("Explain my AWS costs and forecast for next month.")
-
-print(final_state["analysis_result"])
+```mermaid
+flowchart LR
+    START --> discover_tools_node
+    discover_tools_node --> input_validation_node
+    input_validation_node --> opportunity_detection_node
+    opportunity_detection_node --> recommendation_fetch_node
+    recommendation_fetch_node --> strategy_generator_node
+    strategy_generator_node --> output_formatter_node
+    output_formatter_node --> END
 ```
 
-Internally, `invoke`:
+Key behavior:
 
-1. Creates a `GraphState` Pydantic model with:
-   - `user_query`
-   - `discovered_tools` (empty list)
-   - `cost_data`, `forecast_data`, `analysis_result` (all `None`)
-   - `errors` (empty list)
-2. Converts it to a dict via `.model_dump()`
-3. Calls `self.graph.ainvoke(initial_state)` which runs:
-   `START → discover_tools_node → fetch_cost_node → fetch_forecast_node → analyze_node → output_node → END`
+- Validates remediation input items
+- Detects opportunities from cost signals
+- Fetches recommendation context via MCP tools
+- Runs `RemediationAgent` to generate a structured remediation plan
+- Normalizes output formatting for API/UI consumption
 
----
+## API Endpoints
 
-## Running the Project
+- `POST /api/analyze`
+  - Body:
+    - `query` (optional string)
+    - `analysis_type` (optional; defaults to `full_account`)
+  - Returns normalized analysis payload (`ok`, spend metrics, top services, forecast, summary, errors)
 
-### 1. Install Dependencies
+- `POST /api/recommend`
+  - Body options:
+    - `items` (optional explicit remediation input list), or
+    - `query` + `analysis_type` (if `items` omitted, analysis is run first and top services are converted to remediation items)
+  - Returns remediation plan JSON (`summary`, `remediations`)
 
-Make sure you have Python 3.10+ and `pip` installed, then:
+There is also a form-based route:
+
+- `POST /analyze` for the web UI (`templates/index.html`)
+
+## Setup
+
+### 1) Python + dependencies
+
+- Requires **Python 3.11+**
+
+Install with pip:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Or, if you are using `uv` (recommended for reproducibility):
+Or with `uv`:
 
 ```bash
 uv sync
 ```
 
-### 2. Configure AWS Billing MCP
+### 2) Environment variables
 
-The MCP server configuration is in `server/aws_mcp.json`. Ensure that:
+At minimum, configure:
 
-- Your AWS credentials and region are correctly configured in the environment used by the MCP server
-- Any required IAM permissions for Cost Explorer, Budgets, and Forecast APIs are granted
+- `GROQ_API_KEY`
+- `GROQ_MODEL` (optional; defaults in `config.py`)
+- `AWS_PROFILE`
+- `AWS_REGION`
 
-### 3. Run the App
+Note: `config.py` also defines `MCP_BILLING_ENDPOINT` and `MCP_PRICING_ENDPOINT` as required settings.
 
-Depending on how this repo is wired, you can typically start the agent via:
+### 3) MCP server configuration
+
+Review `server/aws_mcp.json`:
+
+- MCP server command/args (currently uses `uvx`)
+- AWS profile and region passed to the MCP child process
+
+Ensure IAM permissions for Cost Explorer, forecasting, Cost Optimization Hub, and Compute Optimizer APIs as needed.
+
+### 4) Run
+
+Start Flask UI/API:
 
 ```bash
-python -m app
+python app.py
 ```
 
-or:
+For CLI/local sample run:
 
 ```bash
 python main.py
 ```
 
-(Check `app.py` and `main.py` for the entrypoint you prefer.)
-
-Once running, the app will:
-
-1. Accept a user query
-2. Execute the LangGraph workflow described above
-3. Return an analysis that combines historical costs and a near‑term forecast
-
----
-
 ## Key Files
 
-- `graph/manager_graph.py` – LangGraph orchestration of the manager workflow
-- `agents/manager_agent.py` – LLM‑based agent that interprets cost and forecast data
-- `utils/cost_processor.py` – Helpers to aggregate and normalize Cost Explorer / forecast responses
-- `server/client.py` – MCP client responsible for talking to the AWS Billing MCP server
-- `models/schemas.py` – Pydantic models including `GraphState`
-
----
-
-## Extending the Workflow
-
-You can customize the LangGraph workflow in `ManagerGraph` by:
-
-- Adding additional nodes (e.g., anomaly detection, savings‑plans analysis)
-- Branching based on state (e.g., if forecast is above a threshold, route to a mitigation planner node)
-- Enriching `cost_data` and `forecast_data` with more granular dimensions (accounts, regions, services)
-
-Because the workflow is a `StateGraph(dict)`, new nodes just need to read and write from the shared state dict in a consistent way.
+- `app.py` - Flask routes, output normalization, and graph orchestration
+- `graph/manager_graph.py` - cost/forecast analysis workflow
+- `graph/remediation_graph.py` - remediation workflow
+- `agents/manager_agent.py` - structured cost analysis generation
+- `agents/remediation_agent.py` - structured remediation plan generation
+- `utils/cost_processor.py` - Cost Explorer/forecast aggregation helpers
+- `utils/opportunity_detector.py` - remediation opportunity detection
+- `utils/recommendation_fetcher.py` - MCP recommendation context retrieval
+- `server/client.py` - AWS Billing MCP client wrapper
+- `models/schemas.py` - Pydantic state and response schemas
 
 

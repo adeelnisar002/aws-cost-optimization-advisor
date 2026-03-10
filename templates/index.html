@@ -5,58 +5,73 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AWS Cost Analysis Agent</title>
   <style>
+    @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
     :root {
-      --bg: #f4f7fb;
+      --bg: #f4f7ff;
       --surface: #ffffff;
-      --text: #0f172a;
-      --muted: #64748b;
-      --border: #e2e8f0;
-      --primary: #2563eb;
-      --primary-700: #1d4ed8;
+      --surface-soft: #f8faff;
+      --text: #101a36;
+      --muted: #5e6b8a;
+      --border: #dce5ff;
+      --primary: #3451ff;
+      --primary-700: #2337c9;
       --danger: #dc2626;
-      --shadow: 0 10px 30px rgba(15, 23, 42, 0.07);
-      --radius-lg: 16px;
+      --ok: #0f766e;
+      --radius-lg: 18px;
       --radius-md: 12px;
+      --shadow: 0 24px 45px rgba(14, 29, 97, 0.12);
     }
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
-      background:
-        radial-gradient(1200px 420px at -12% -18%, rgba(99, 102, 241, 0.14), transparent 50%),
-        radial-gradient(1000px 420px at 110% -10%, rgba(37, 99, 235, 0.16), transparent 55%),
-        linear-gradient(180deg, #eef4ff 0%, var(--bg) 280px);
+      font-family: "IBM Plex Sans", Segoe UI, Arial, sans-serif;
       color: var(--text);
+      background:
+        radial-gradient(1000px 440px at -10% -12%, rgba(52, 81, 255, 0.18), transparent 56%),
+        radial-gradient(980px 460px at 115% -10%, rgba(56, 189, 248, 0.2), transparent 50%),
+        linear-gradient(180deg, #eef3ff 0%, var(--bg) 320px);
     }
 
     .container {
-      max-width: 1080px;
+      max-width: 1120px;
       margin: 0 auto;
-      padding: 32px 18px 40px;
+      padding: 34px 20px 44px;
     }
 
     .hero {
-      margin-bottom: 16px;
-      background: linear-gradient(120deg, #0f172a 0%, #1d4ed8 60%, #2563eb 100%);
+      margin-bottom: 18px;
+      border-radius: 24px;
+      padding: 24px 26px;
       color: #fff;
-      border-radius: var(--radius-lg);
-      padding: 20px 22px;
-      box-shadow: var(--shadow);
-      border: 1px solid rgba(255, 255, 255, 0.16);
+      background:
+        radial-gradient(460px 280px at 86% -40%, rgba(129, 140, 248, 0.46), transparent 70%),
+        linear-gradient(120deg, #0f1838 0%, #22326f 54%, #3048bb 100%);
+      box-shadow: 0 22px 45px rgba(23, 38, 122, 0.28);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     .hero h1 {
       margin: 0;
-      font-size: 30px;
+      font-family: "Manrope", sans-serif;
+      font-size: 34px;
+      letter-spacing: -0.025em;
       font-weight: 800;
-      letter-spacing: -0.02em;
+    }
+
+    .hero p {
+      margin: 8px 0 0;
+      color: rgba(235, 241, 255, 0.92);
+      font-size: 15px;
+      max-width: 760px;
     }
 
     .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(203, 216, 255, 0.8);
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow);
       padding: 20px 22px;
@@ -65,53 +80,107 @@
 
     label {
       display: inline-block;
-      margin-bottom: 10px;
+      margin-bottom: 9px;
+      font-family: "Manrope", sans-serif;
       font-size: 15px;
       font-weight: 700;
     }
 
+    .hint {
+      margin: -4px 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
     textarea {
       width: 100%;
-      min-height: 100px;
-      border: 1px solid #cbd5e1;
+      min-height: 108px;
+      border: 1px solid #bfccff;
       border-radius: var(--radius-md);
-      padding: 12px 14px;
+      padding: 13px 14px;
       font-size: 14px;
-      line-height: 1.45;
+      line-height: 1.5;
       outline: none;
       resize: vertical;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      background: #fff;
+      transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+      background: #fbfcff;
       color: var(--text);
     }
 
     textarea:focus {
-      border-color: #93c5fd;
-      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+      border-color: #7f9cff;
+      box-shadow: 0 0 0 4px rgba(72, 108, 255, 0.18);
+      background: #fff;
     }
+
+    .quick-analysis {
+      margin-top: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%);
+    }
+
+    .quick-analysis h4 {
+      margin: 0 0 9px;
+      font-family: "Manrope", sans-serif;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(90deg, var(--primary) 0%, #273dd9 100%);
+      color: #fff;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.07s, filter 0.18s;
+    }
+
+    .quick-btn {
+      width: 100%;
+      padding: 9px 10px;
+      font-size: 13px;
+      background: #e7edff;
+      color: #243260;
+      border: 1px solid #d4deff;
+    }
+
+    .quick-btn.active {
+      background: linear-gradient(90deg, #445ef5, #263dcf);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 7px 18px rgba(41, 66, 209, 0.35);
+    }
+
+    button:hover { filter: brightness(0.97); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.75; cursor: not-allowed; }
 
     .actions {
       margin-top: 14px;
       display: flex;
       align-items: center;
       gap: 10px;
+      flex-wrap: wrap;
     }
 
-    button {
-      border: 0;
-      border-radius: 10px;
-      background: linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%);
-      color: #fff;
-      padding: 10px 16px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.06s;
+    #recommend-btn {
+      background: #eef2ff;
+      color: #2a3c80;
+      border: 1px solid #ccd8ff;
     }
-
-    button:hover { background: linear-gradient(90deg, #1d4ed8 0%, #1e40af 100%); }
-    button:active { transform: translateY(1px); }
-    button:disabled { opacity: 0.75; cursor: not-allowed; }
 
     .loading {
       display: none;
@@ -130,8 +199,10 @@
 
     .result-header h2 {
       margin: 0;
+      font-family: "Manrope", sans-serif;
       font-size: 23px;
     }
+
     .result-meta {
       margin: 6px 0 14px;
       color: var(--muted);
@@ -143,9 +214,9 @@
       font-weight: 700;
       padding: 6px 10px;
       border-radius: 999px;
-      border: 1px solid var(--border);
-      background: #f8fafc;
-      color: #0f172a;
+      border: 1px solid #ccdbff;
+      background: #f4f8ff;
+      color: #223566;
     }
 
     .metrics {
@@ -158,7 +229,7 @@
     .metric {
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%);
+      background: var(--surface);
       padding: 12px;
     }
 
@@ -173,7 +244,8 @@
     }
 
     .metric .value {
-      font-size: 18px;
+      font-family: "Manrope", sans-serif;
+      font-size: 20px;
       font-weight: 800;
       letter-spacing: -0.01em;
     }
@@ -181,12 +253,12 @@
     .metric .value.negative { color: var(--danger); }
 
     .summary {
-      border: 1px solid var(--border);
-      border-left: 4px solid #93c5fd;
+      border: 1px solid #cfe0ff;
+      border-left: 4px solid #7391ff;
       border-radius: 10px;
       padding: 12px;
       margin: 10px 0 14px;
-      background: #f8fbff;
+      background: #f6f9ff;
       font-size: 15px;
       line-height: 1.55;
     }
@@ -204,7 +276,7 @@
     }
 
     thead tr {
-      background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+      background: linear-gradient(180deg, #f6f8ff 0%, #edf2ff 100%);
     }
 
     th, td {
@@ -214,12 +286,8 @@
       font-size: 14px;
     }
 
-    tbody tr:last-child td {
-      border-bottom: 0;
-    }
-    tbody tr:hover td {
-      background: #f8fbff;
-    }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: #f7faff; }
 
     .num {
       text-align: right;
@@ -246,22 +314,143 @@
       color: var(--muted);
     }
 
+    .rec-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .rec-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      padding: 16px;
+      margin-bottom: 12px;
+      line-height: 1.62;
+    }
+
+    .rec-card h4 {
+      margin: 0 0 10px;
+      font-family: "Manrope", sans-serif;
+      font-size: 22px;
+      letter-spacing: -0.01em;
+    }
+
+    .pill-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      background: #f8faff;
+      color: #20376c;
+    }
+
+    .pill.low { background: #ecfdf3; border-color: #bbf7d0; color: #166534; }
+    .pill.medium { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+    .pill.high { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+
+    .code-box {
+      margin-top: 12px;
+      background: #0d1733;
+      color: #e5e7eb;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+
+    .advisory {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1e3a8a;
+      border-radius: 10px;
+      padding: 11px 12px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    #recommendations-content {
+      font-size: 16px;
+      color: #1a2548;
+    }
+
+    .rec-detail {
+      margin-top: 10px;
+      font-size: 18px;
+    }
+
+    .rec-detail strong {
+      font-family: "Manrope", sans-serif;
+      font-size: 19px;
+      color: #0f1d45;
+    }
+
+    .rec-steps {
+      margin-top: 12px;
+      border-top: 1px dashed #d7e1ff;
+      padding-top: 12px;
+    }
+
+    .rec-steps-title {
+      font-family: "Manrope", sans-serif;
+      font-size: 19px;
+      margin-bottom: 8px;
+      color: #13275a;
+    }
+
+    .steps-list {
+      margin: 0;
+      padding-left: 24px;
+      font-size: 17px;
+      line-height: 1.65;
+    }
+
+    .steps-list li + li {
+      margin-top: 4px;
+    }
+
+    .kbd {
+      border: 1px solid #c9d4ff;
+      border-bottom-width: 2px;
+      border-radius: 8px;
+      background: #f7f9ff;
+      padding: 2px 7px;
+      font-size: 12px;
+      color: #3e4f86;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
     @media (max-width: 940px) {
-      .metrics {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .rec-summary-grid { grid-template-columns: 1fr; }
+      .quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 620px) {
       .container { padding: 20px 12px 28px; }
-      .hero h1 { font-size: 26px; }
-      .metrics {
-        grid-template-columns: 1fr;
-      }
-      .result-header {
-        align-items: flex-start;
-        flex-direction: column;
-      }
+      .hero h1 { font-size: 28px; }
+      .hero p { font-size: 14px; }
+      .metrics { grid-template-columns: 1fr; }
+      .result-header { align-items: flex-start; flex-direction: column; }
+      .quick-grid { grid-template-columns: 1fr; }
+      .rec-card h4 { font-size: 18px; }
+      #recommendations-content { font-size: 15px; }
+      .rec-detail { font-size: 16px; }
+      .rec-detail strong, .rec-steps-title { font-size: 17px; }
+      .steps-list { font-size: 15px; }
     }
   </style>
 </head>
@@ -269,14 +458,30 @@
   <div class="container">
     <div class="hero">
       <h1>AWS Cost Analysis Agent</h1>
+      <p>Track spending, identify optimization opportunities, and generate practical remediation guidance in one place.</p>
     </div>
 
     <div class="panel">
       <form method="post" action="/analyze" id="analyze-form">
         <label for="query">Ask the agent</label>
+        <div class="hint">Tip: Press <span class="kbd">Ctrl</span> + <span class="kbd">Enter</span> to run analysis quickly.</div>
         <textarea id="query" name="query">{{ query }}</textarea>
+        <input type="hidden" name="analysis_type" id="analysis-type-input" value="{{ analysis_type or 'full_account' }}" />
+        <div class="quick-analysis">
+          <h4>Quick Analysis</h4>
+          <div class="quick-grid">
+            <button type="button" class="quick-btn" data-analysis-type="ec2">EC2 Optimization</button>
+            <button type="button" class="quick-btn" data-analysis-type="s3">S3 Storage Analysis</button>
+            <button type="button" class="quick-btn" data-analysis-type="rds">RDS Database Costs</button>
+            <button type="button" class="quick-btn" data-analysis-type="lambda">Lambda Usage</button>
+            <button type="button" class="quick-btn" data-analysis-type="ebs">EBS Volume Optimization</button>
+            <button type="button" class="quick-btn" data-analysis-type="networking">Networking Costs</button>
+            <button type="button" class="quick-btn" data-analysis-type="full_account">Full Account Analysis</button>
+          </div>
+        </div>
         <div class="actions">
-          <button type="submit" id="submit-btn">Run Analysis</button>
+          <button type="submit" id="submit-btn">Run Cost Analysis</button>
+          <button type="button" id="recommend-btn">Get Recommendations</button>
           <span class="loading" id="loading-text">Running analysis...</span>
         </div>
       </form>
@@ -373,21 +578,259 @@
         {% endif %}
       </div>
     {% endif %}
+
+    <div class="panel" id="recommendations-panel" style="display:none; margin-top: 8px;">
+      <div class="result-header">
+        <h2>Recommendations</h2>
+        <span class="status-pill" id="recommendations-status">Ready</span>
+      </div>
+      <div class="advisory">No actions are executed automatically. Suggestions below are advisory only.</div>
+      <div id="recommendations-content"></div>
+      <details>
+        <summary class="muted">View raw JSON</summary>
+        <pre id="recommendations-json" style="white-space: pre-wrap; font-size: 13px; background: #0b1120; color: #e5e7eb; padding: 12px; border-radius: 10px; overflow-x: auto;"></pre>
+      </details>
+    </div>
   </div>
 
   <script>
     (function () {
       var form = document.getElementById("analyze-form");
       var submitBtn = document.getElementById("submit-btn");
+      var recommendBtn = document.getElementById("recommend-btn");
       var loadingText = document.getElementById("loading-text");
-      if (!form || !submitBtn || !loadingText) {
+      var recommendationsPanel = document.getElementById("recommendations-panel");
+      var recommendationsJson = document.getElementById("recommendations-json");
+      var recommendationsContent = document.getElementById("recommendations-content");
+      var recommendationsStatus = document.getElementById("recommendations-status");
+      var analysisTypeInput = document.getElementById("analysis-type-input");
+      var queryInput = document.getElementById("query");
+      var quickButtons = Array.prototype.slice.call(document.querySelectorAll(".quick-btn"));
+      if (!form || !submitBtn || !loadingText || !recommendBtn) {
         return;
+      }
+
+      if (queryInput && !queryInput.getAttribute("placeholder")) {
+        queryInput.setAttribute("placeholder", "e.g., What are my top services by spend and how can I save this month?");
+      }
+
+      if (queryInput) {
+        queryInput.addEventListener("keydown", function (event) {
+          if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+            event.preventDefault();
+            form.requestSubmit();
+          }
+        });
+      }
+
+      var quickAnalysisPrompts = {
+        ec2: "Analyze EC2 costs only. Find top EC2 cost drivers, rightsizing opportunities, and estimated savings.",
+        s3: "Analyze S3 storage costs only. Identify expensive buckets, storage class optimization, and lifecycle opportunities.",
+        rds: "Analyze RDS database costs only. Find over-provisioned instances, storage inefficiencies, and savings opportunities.",
+        lambda: "Analyze Lambda costs only. Identify high-cost functions, memory/runtime optimization opportunities, and savings estimates.",
+        ebs: "Analyze EBS costs only. Detect unattached or oversized volumes and provide optimization recommendations.",
+        networking: "Analyze networking costs only. Focus on VPC, data transfer, load balancers, and related optimization opportunities.",
+        full_account: "What are my top 5 AWS services by spend and forecast for next month?"
+      };
+
+      var loadingMessagesByType = {
+        ec2: ["Analyzing EC2 instances...", "Checking idle resources...", "Estimating savings...", "Generating recommendations..."],
+        s3: ["Analyzing S3 storage...", "Checking idle resources...", "Estimating savings...", "Generating recommendations..."],
+        rds: ["Analyzing RDS databases...", "Checking idle resources...", "Estimating savings...", "Generating recommendations..."],
+        lambda: ["Analyzing Lambda usage...", "Checking idle resources...", "Estimating savings...", "Generating recommendations..."],
+        ebs: ["Analyzing EBS volumes...", "Checking idle resources...", "Estimating savings...", "Generating recommendations..."],
+        networking: ["Analyzing networking costs...", "Checking idle resources...", "Estimating savings...", "Generating recommendations..."],
+        full_account: ["Analyzing full AWS account...", "Checking idle resources...", "Estimating savings...", "Generating recommendations..."]
+      };
+      var loadingTimer = null;
+
+      function setActiveQuickButton(analysisType) {
+        for (var i = 0; i < quickButtons.length; i++) {
+          var btn = quickButtons[i];
+          if (!btn) continue;
+          var isActive = btn.getAttribute("data-analysis-type") === analysisType;
+          btn.classList.toggle("active", isActive);
+        }
+      }
+
+      function startLoading(analysisType) {
+        var key = analysisType || "full_account";
+        var messages = loadingMessagesByType[key] || loadingMessagesByType.full_account;
+        var idx = 0;
+        loadingText.textContent = messages[0] || "Running analysis...";
+        loadingText.style.display = "inline";
+        if (loadingTimer) {
+          window.clearInterval(loadingTimer);
+        }
+        loadingTimer = window.setInterval(function () {
+          idx = (idx + 1) % messages.length;
+          loadingText.textContent = messages[idx];
+        }, 1100);
+      }
+
+      function chooseQuickAnalysis(analysisType) {
+        var type = analysisType || "full_account";
+        if (analysisTypeInput) {
+          analysisTypeInput.value = type;
+        }
+        if (queryInput && quickAnalysisPrompts[type]) {
+          queryInput.value = quickAnalysisPrompts[type];
+        }
+        setActiveQuickButton(type);
+      }
+
+      function formatMoney(value) {
+        var num = Number(value);
+        if (!Number.isFinite(num)) return "$0.00";
+        return "$" + num.toFixed(2);
+      }
+
+      function safeText(value) {
+        if (value === null || value === undefined) return "";
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function renderStringList(items) {
+        if (!Array.isArray(items) || !items.length) return "";
+        var html = '<ol class="steps-list">';
+        for (var i = 0; i < items.length; i++) {
+          html += "<li>" + safeText(items[i]) + "</li>";
+        }
+        html += "</ol>";
+        return html;
+      }
+
+      function renderRecommendations(data) {
+        if (!recommendationsContent) return;
+
+        if (!data || data.error) {
+          recommendationsContent.innerHTML =
+            '<div class="error-box"><strong>Error:</strong> ' + safeText((data && data.error) || "Unknown error") + "</div>";
+          if (recommendationsStatus) recommendationsStatus.textContent = "Error";
+          return;
+        }
+
+        var summary = data.summary || {};
+        var remediations = Array.isArray(data.remediations) ? data.remediations : [];
+        if (recommendationsStatus) recommendationsStatus.textContent = "Success";
+
+        var html = "";
+        html += '<div class="rec-summary-grid">';
+        html += '<div class="metric"><span class="label">Estimated Savings</span><span class="value">' +
+          formatMoney(summary.total_estimated_savings || 0) + "</span></div>";
+        html += '<div class="metric"><span class="label">Risk Profile</span><span class="value">' +
+          safeText(summary.risk_profile || "Unknown") + "</span></div>";
+        html += '<div class="metric"><span class="label">Priority Score</span><span class="value">' +
+          safeText(summary.priority_score || 0) + "</span></div>";
+        html += "</div>";
+
+        if (!remediations.length) {
+          html += '<div class="muted">No recommendations returned.</div>';
+          recommendationsContent.innerHTML = html;
+          return;
+        }
+
+        for (var i = 0; i < remediations.length; i++) {
+          var rec = remediations[i] || {};
+          var risk = String(rec.risk_level || "").toLowerCase();
+          var effort = String(rec.effort_level || "").toLowerCase();
+          html += '<div class="rec-card">';
+          html += "<h4>" + safeText(rec.service || "Unknown Service") + " - " + safeText(rec.issue_detected || "Issue") + "</h4>";
+          html += '<div class="pill-row">';
+          html += '<span class="pill ' + risk + '">Risk: ' + safeText(rec.risk_level || "Unknown") + "</span>";
+          html += '<span class="pill ' + effort + '">Effort: ' + safeText(rec.effort_level || "Unknown") + "</span>";
+          html += '<span class="pill">Automation: ' + safeText(rec.automation_level || "Unknown") + "</span>";
+          html += '<span class="pill">Savings: ' + formatMoney(rec.estimated_savings || 0) + "</span>";
+          html += "</div>";
+          html += '<div class="rec-detail"><strong>Recommendation:</strong> ' + safeText(rec.recommendation || "") + "</div>";
+          if (rec.rationale) {
+            html += '<div class="rec-detail"><strong>Why this helps:</strong> ' + safeText(rec.rationale) + "</div>";
+          }
+          if (Array.isArray(rec.implementation_steps) && rec.implementation_steps.length) {
+            html += '<div class="rec-steps"><div class="rec-steps-title">Implementation Steps</div>' +
+              renderStringList(rec.implementation_steps) + "</div>";
+          }
+          if (Array.isArray(rec.validation_steps) && rec.validation_steps.length) {
+            html += '<div class="rec-steps"><div class="rec-steps-title">Validation Steps</div>' +
+              renderStringList(rec.validation_steps) + "</div>";
+          }
+          if (rec.cli_example) {
+            html += '<div class="code-box"><strong>CLI (example only):</strong>\n' + safeText(rec.cli_example) + "</div>";
+          }
+          if (rec.terraform_example) {
+            html += '<div class="code-box"><strong>Terraform (optional):</strong>\n' + safeText(rec.terraform_example) + "</div>";
+          }
+          html += "</div>";
+        }
+
+        recommendationsContent.innerHTML = html;
       }
 
       form.addEventListener("submit", function () {
         submitBtn.disabled = true;
         submitBtn.textContent = "Running...";
-        loadingText.style.display = "inline";
+        var selectedType = analysisTypeInput ? analysisTypeInput.value : "full_account";
+        startLoading(selectedType);
+        // Hide previous recommendations when a new analysis starts
+        if (recommendationsPanel) {
+          recommendationsPanel.style.display = "none";
+          if (recommendationsJson) {
+            recommendationsJson.textContent = "";
+          }
+          if (recommendationsContent) {
+            recommendationsContent.innerHTML = "";
+          }
+          if (recommendationsStatus) {
+            recommendationsStatus.textContent = "Ready";
+          }
+        }
+      });
+
+      for (var i = 0; i < quickButtons.length; i++) {
+        (function (btn) {
+          btn.addEventListener("click", function () {
+            var selected = btn.getAttribute("data-analysis-type") || "full_account";
+            chooseQuickAnalysis(selected);
+            form.requestSubmit();
+          });
+        })(quickButtons[i]);
+      }
+
+      setActiveQuickButton(analysisTypeInput ? analysisTypeInput.value : "full_account");
+
+      recommendBtn.addEventListener("click", async function () {
+        if (!recommendationsPanel || !recommendationsJson) return;
+        recommendBtn.disabled = true;
+        var originalLabel = recommendBtn.textContent;
+        recommendBtn.textContent = "Fetching...";
+        try {
+          var queryEl = document.getElementById("query");
+          var queryVal = queryEl ? queryEl.value : "";
+          var analysisType = analysisTypeInput ? analysisTypeInput.value : "full_account";
+          var resp = await fetch("/api/recommend", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: queryVal, analysis_type: analysisType })
+          });
+          var data = await resp.json();
+          recommendationsJson.textContent = JSON.stringify(data, null, 2);
+          renderRecommendations(data);
+          recommendationsPanel.style.display = "block";
+        } catch (e) {
+          recommendationsJson.textContent = "Failed to load recommendations: " + e;
+          if (recommendationsContent) {
+            recommendationsContent.innerHTML =
+              '<div class="error-box"><strong>Error:</strong> Failed to load recommendations.</div>';
+          }
+          if (recommendationsStatus) recommendationsStatus.textContent = "Error";
+          recommendationsPanel.style.display = "block";
+        } finally {
+          recommendBtn.disabled = false;
+          recommendBtn.textContent = originalLabel;
+        }
       });
     })();
   </script>

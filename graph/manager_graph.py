@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from langgraph.graph import END, START, StateGraph
 
@@ -17,6 +17,37 @@ class ManagerGraph:
     def __init__(self) -> None:
         self.agent = ManagerAgent()
         self.graph = self._build_graph()
+
+    @staticmethod
+    def _service_filter_for_analysis_type(
+        analysis_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        normalized = (analysis_type or "full_account").strip().lower()
+        service_map: Dict[str, List[str]] = {
+            "ec2": [
+                "Amazon Elastic Compute Cloud - Compute",
+                "EC2 - Other",
+                "Amazon EC2",
+            ],
+            "s3": ["Amazon Simple Storage Service"],
+            "rds": ["Amazon Relational Database Service"],
+            "lambda": ["AWS Lambda"],
+            "ebs": ["Amazon Elastic Block Store"],
+            "networking": [
+                "Amazon Virtual Private Cloud",
+                "Amazon Elastic Load Balancing",
+                "AWS Data Transfer",
+                "Amazon Route 53",
+                "Amazon CloudFront",
+                "NAT Gateway",
+            ],
+        }
+        if normalized == "full_account":
+            return None
+        services = service_map.get(normalized, [])
+        if not services:
+            return None
+        return {"Dimensions": {"Key": "SERVICE", "Values": services}}
 
     def _build_graph(self):
         workflow = StateGraph(dict)
@@ -59,6 +90,14 @@ class ManagerGraph:
         logger.info("fetch_cost_node: fetching production cost views")
         try:
             from datetime import date, timedelta
+
+            analysis_type = str(state.get("analysis_type", "full_account") or "full_account")
+            service_filter = self._service_filter_for_analysis_type(analysis_type)
+            logger.info(
+                "Analysis scope: analysis_type=%s filter=%s",
+                analysis_type,
+                service_filter,
+            )
 
             today = date.today()
             first_day_current_month = date(today.year, today.month, 1)
@@ -109,6 +148,7 @@ class ManagerGraph:
                 granularity="MONTHLY",
                 metric="NetUnblendedCost",
                 group_by=None,
+                filter_expr=service_filter,
             )
             total_results = CostDataProcessor.extract_results_by_time(total_response)
             monthly_total = CostDataProcessor.extract_total_from_results(
@@ -124,6 +164,7 @@ class ManagerGraph:
                 granularity="MONTHLY",
                 metric="NetUnblendedCost",
                 group_by="SERVICE",
+                filter_expr=service_filter,
             )
             grouped_results = CostDataProcessor.extract_results_by_time(grouped_response)
             grouped_agg = CostDataProcessor.aggregate_grouped_service_cost(
@@ -131,7 +172,7 @@ class ManagerGraph:
                 metric_key="NetUnblendedCost",
             )
             top_services = CostDataProcessor.get_top_services(
-                grouped_agg["service_spend"], top_n=3
+                grouped_agg["service_spend"], top_n=5
             )
 
             # Query C: Month-to-date current month (ungrouped)
@@ -143,6 +184,7 @@ class ManagerGraph:
                 granularity="DAILY",
                 metric="NetUnblendedCost",
                 group_by=None,
+                filter_expr=service_filter,
             )
             mtd_results = CostDataProcessor.extract_results_by_time(mtd_response)
             month_to_date_spend = CostDataProcessor.extract_total_from_results(
@@ -158,6 +200,7 @@ class ManagerGraph:
                 granularity="DAILY",
                 metric="NetUnblendedCost",
                 group_by=None,
+                filter_expr=service_filter,
             )
             splm_results = CostDataProcessor.extract_results_by_time(splm_response)
             same_period_last_month_spend = CostDataProcessor.extract_total_from_results(
@@ -188,6 +231,7 @@ class ManagerGraph:
                     f"{splm_start.isoformat()} to {splm_end_inclusive.isoformat()}"
                 ),
                 "month_to_date_change_pct": percent_change,
+                "analysis_type": analysis_type,
             }
 
             logger.info(
@@ -212,6 +256,8 @@ class ManagerGraph:
         try:
             from datetime import date, timedelta
 
+            analysis_type = str(state.get("analysis_type", "full_account") or "full_account")
+            service_filter = self._service_filter_for_analysis_type(analysis_type)
             today = date.today()
             # Forecast for the next full month using end-exclusive window
             if today.month == 12:
@@ -235,6 +281,7 @@ class ManagerGraph:
             raw_response = await billing_mcp_client.get_cost_forecast(
                 time_period={"start": start.isoformat(), "end": end_exclusive.isoformat()},
                 granularity="DAILY",
+                filter_expr=service_filter,
             )
             
             # Step 2: Extract only the forecasted total amount
@@ -245,6 +292,7 @@ class ManagerGraph:
                 "forecast_next_month": forecast_total,
                 "forecast_month": start.strftime("%B %Y"),
                 "forecast_period": f"{start.isoformat()} to {end_inclusive.isoformat()}",
+                "analysis_type": analysis_type,
             }
             
             # Calculate expected days in forecast period for verification
@@ -281,10 +329,11 @@ class ManagerGraph:
         logger.info("output_node: finalizing output")
         return state
 
-    async def invoke(self, user_query: str) -> Dict[str, Any]:
+    async def invoke(self, user_query: str, analysis_type: str = "full_account") -> Dict[str, Any]:
         """Helper to run the full graph for a given user query."""
         initial_state = GraphState(
             user_query=user_query,
+            analysis_type=analysis_type,
             discovered_tools=[],
             cost_data=None,
             forecast_data=None,

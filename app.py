@@ -1,19 +1,31 @@
 import asyncio
 import logging
 from threading import Thread
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from flask import Flask, jsonify, render_template, request
 
+from config import settings
 from graph.manager_graph import ManagerGraph
+from graph.remediation_graph import RemediationGraph
 
 
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 graph = ManagerGraph()
+remediation_graph = RemediationGraph()
 
-DEFAULT_QUERY = "What are my top 3 AWS services by spend and forecast for next month?"
+DEFAULT_QUERY = "What are my top 5 AWS services by spend and forecast for next month?"
+ANALYSIS_TYPES = {
+    "ec2",
+    "s3",
+    "rds",
+    "lambda",
+    "ebs",
+    "networking",
+    "full_account",
+}
 
 
 def run_async(coro_factory):
@@ -71,6 +83,45 @@ def _currency_display(value: Any) -> str:
     if number < 0:
         return f"-${abs(number):.2f}"
     return f"${number:.2f}"
+
+
+def _normalize_analysis_type(value: Any) -> str:
+    normalized = str(value or "full_account").strip().lower()
+    if normalized not in ANALYSIS_TYPES:
+        return "full_account"
+    return normalized
+
+
+def build_remediation_items_from_state(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Derive remediation input items from the latest cost analysis state.
+
+    For now, we use the top services cost breakdown as the primary signal.
+    """
+    cost_data = state.get("cost_data") or {}
+    if not isinstance(cost_data, dict):
+        cost_data = {}
+
+    top_services = cost_data.get("top_services") or []
+    if not isinstance(top_services, list):
+        top_services = []
+
+    region = settings.aws_region
+    items: List[Dict[str, Any]] = []
+
+    for svc in top_services:
+        if not isinstance(svc, dict):
+            continue
+        items.append(
+            {
+                "service_name": svc.get("service", "Unknown"),
+                "monthly_cost": _safe_float(svc.get("spend", 0.0)),
+                "usage_type": "Unknown",
+                "region": region,
+                "anomaly_flag": False,
+            }
+        )
+
+    return items
 
 
 def normalize_output(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -157,6 +208,7 @@ def normalize_output(state: Dict[str, Any]) -> Dict[str, Any]:
             "display_same_period_last_month_spend": _currency_display(
                 cost_data.get("same_period_last_month_spend", 0.0)
             ),
+            "analysis_type": cost_data.get("analysis_type", "full_account"),
         }
 
     error_msg = (
@@ -177,6 +229,7 @@ def index():
     return render_template(
         "index.html",
         query=DEFAULT_QUERY,
+        analysis_type="full_account",
         result=None,
     )
 
@@ -184,9 +237,10 @@ def index():
 @app.post("/analyze")
 def analyze():
     user_query = (request.form.get("query") or "").strip() or DEFAULT_QUERY
+    analysis_type = _normalize_analysis_type(request.form.get("analysis_type"))
 
     try:
-        state = run_async(lambda: graph.invoke(user_query))
+        state = run_async(lambda: graph.invoke(user_query, analysis_type=analysis_type))
         result = normalize_output(state)
     except Exception as exc:
         logger.exception("Analysis failed")
@@ -202,6 +256,7 @@ def analyze():
     return render_template(
         "index.html",
         query=user_query,
+        analysis_type=analysis_type,
         result=result,
     )
 
@@ -210,9 +265,10 @@ def analyze():
 def api_analyze():
     payload = request.get_json(silent=True) or {}
     user_query = (payload.get("query") or "").strip() or DEFAULT_QUERY
+    analysis_type = _normalize_analysis_type(payload.get("analysis_type"))
 
     try:
-        state = run_async(lambda: graph.invoke(user_query))
+        state = run_async(lambda: graph.invoke(user_query, analysis_type=analysis_type))
         result = normalize_output(state)
         return jsonify(result), 200 if result.get("ok") else 500
     except Exception as exc:
@@ -224,6 +280,41 @@ def api_analyze():
                     "error": str(exc),
                     "summary": "The request failed before analysis could complete.",
                     "errors": [],
+                }
+            ),
+            500,
+        )
+
+
+@app.post("/api/recommend")
+def api_recommend():
+    """Generate remediation recommendations from cost analysis.
+
+    If the client provides explicit `items`, they are used directly.
+    Otherwise, this endpoint will run a fresh ManagerGraph analysis using
+    the provided or default query, and derive remediation items from the
+    resulting top services breakdown.
+    """
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("items")
+    user_query = (payload.get("query") or "").strip() or DEFAULT_QUERY
+    analysis_type = _normalize_analysis_type(payload.get("analysis_type"))
+
+    try:
+        if not items:
+            # Run a fresh cost analysis to derive remediation items.
+            state = run_async(lambda: graph.invoke(user_query, analysis_type=analysis_type))
+            items = build_remediation_items_from_state(state)
+
+        plan = run_async(lambda: remediation_graph.invoke(items))
+        return jsonify(plan), 200
+    except Exception as exc:
+        logger.exception("API recommendations failed")
+        return (
+            jsonify(
+                {
+                    "error": str(exc),
+                    "summary": "The request failed before recommendations could be generated.",
                 }
             ),
             500,
