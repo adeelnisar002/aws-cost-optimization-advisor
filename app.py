@@ -3,7 +3,7 @@ import logging
 from threading import Thread
 from typing import Any, Dict, List
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, g, jsonify, render_template, request, session
 
 from config import settings
 from graph.manager_graph import ManagerGraph
@@ -13,8 +13,31 @@ from graph.remediation_graph import RemediationGraph
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.secret_key = settings.flask_secret_key
 graph = ManagerGraph()
 remediation_graph = RemediationGraph()
+
+
+@app.before_request
+def set_aws_config_from_session():
+    """Set request-scoped AWS region/role from session so MCP client uses them (SaaS: user's role = access their account)."""
+    g.aws_region = session.get("aws_region") or settings.aws_region
+    g.aws_role_arn = session.get("aws_role_arn") or getattr(settings, "aws_role_arn", "") or ""
+    g.aws_profile = session.get("aws_profile") or settings.aws_profile or ""
+    g.aws_external_id = session.get("aws_external_id") or getattr(settings, "aws_external_id", "") or ""
+
+
+def _require_aws_connection():
+    """Return None if user has connected (role ARN or local profile); else return error dict for JSON/HTML response."""
+    role_arn = (getattr(g, "aws_role_arn", None) or "").strip()
+    profile = (getattr(g, "aws_profile", None) or "").strip()
+    if role_arn or profile:
+        return None
+    return {
+        "ok": False,
+        "error": "Connect your AWS account",
+        "summary": "Enter your IAM Role ARN and region above, then click Save AWS settings. We use that role to access your account's cost data. If you use a local profile instead, set AWS_PROFILE in the server environment.",
+    }
 
 DEFAULT_QUERY = "What are my top 5 AWS services by spend and forecast for next month?"
 ANALYSIS_TYPES = {
@@ -105,7 +128,7 @@ def build_remediation_items_from_state(state: Dict[str, Any]) -> List[Dict[str, 
     if not isinstance(top_services, list):
         top_services = []
 
-    region = settings.aws_region
+    region = getattr(g, "aws_region", None) or settings.aws_region
     items: List[Dict[str, Any]] = []
 
     for svc in top_services:
@@ -224,6 +247,51 @@ def normalize_output(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+@app.get("/api/settings")
+def api_get_settings():
+    """Return current AWS settings (region, role ARN, external ID) from session or config."""
+    return jsonify({
+        "aws_region": session.get("aws_region") or settings.aws_region,
+        "aws_role_arn": session.get("aws_role_arn") or getattr(settings, "aws_role_arn", "") or "",
+        "aws_external_id": session.get("aws_external_id") or getattr(settings, "aws_external_id", "") or "",
+    })
+
+
+@app.post("/api/settings")
+def api_save_settings():
+    """Save AWS region, IAM role ARN, and optional external ID to session (SaaS: user connects their account)."""
+    payload = request.get_json(silent=True) or {}
+    region = (payload.get("aws_region") or "").strip() or None
+    role_arn = (payload.get("aws_role_arn") or "").strip() or None
+    external_id = (payload.get("aws_external_id") or "").strip() or None
+    if region:
+        session["aws_region"] = region
+    else:
+        session.pop("aws_region", None)
+    if role_arn is not None:
+        session["aws_role_arn"] = role_arn if role_arn else ""
+    else:
+        session.pop("aws_role_arn", None)
+    if external_id is not None:
+        session["aws_external_id"] = external_id if external_id else ""
+    else:
+        session.pop("aws_external_id", None)
+    return jsonify({
+        "ok": True,
+        "aws_region": session.get("aws_region") or settings.aws_region,
+        "aws_role_arn": session.get("aws_role_arn") or "",
+        "aws_external_id": session.get("aws_external_id") or "",
+    })
+
+
+def _template_aws_context():
+    return {
+        "aws_region": session.get("aws_region") or settings.aws_region,
+        "aws_role_arn": session.get("aws_role_arn") or getattr(settings, "aws_role_arn", "") or "",
+        "aws_external_id": session.get("aws_external_id") or getattr(settings, "aws_external_id", "") or "",
+    }
+
+
 @app.get("/")
 def index():
     return render_template(
@@ -231,11 +299,23 @@ def index():
         query=DEFAULT_QUERY,
         analysis_type="full_account",
         result=None,
+        **_template_aws_context(),
     )
 
 
 @app.post("/analyze")
 def analyze():
+    err = _require_aws_connection()
+    if err:
+        if request.is_json:
+            return jsonify(err), 400
+        return render_template(
+            "index.html",
+            query=request.form.get("query") or DEFAULT_QUERY,
+            analysis_type=request.form.get("analysis_type") or "full_account",
+            result=err,
+            **_template_aws_context(),
+        ), 400
     user_query = (request.form.get("query") or "").strip() or DEFAULT_QUERY
     analysis_type = _normalize_analysis_type(request.form.get("analysis_type"))
 
@@ -258,11 +338,15 @@ def analyze():
         query=user_query,
         analysis_type=analysis_type,
         result=result,
+        **_template_aws_context(),
     )
 
 
 @app.post("/api/analyze")
 def api_analyze():
+    err = _require_aws_connection()
+    if err:
+        return jsonify(err), 400
     payload = request.get_json(silent=True) or {}
     user_query = (payload.get("query") or "").strip() or DEFAULT_QUERY
     analysis_type = _normalize_analysis_type(payload.get("analysis_type"))
@@ -295,6 +379,9 @@ def api_recommend():
     the provided or default query, and derive remediation items from the
     resulting top services breakdown.
     """
+    err = _require_aws_connection()
+    if err:
+        return jsonify(err), 400
     payload = request.get_json(silent=True) or {}
     items = payload.get("items")
     user_query = (payload.get("query") or "").strip() or DEFAULT_QUERY

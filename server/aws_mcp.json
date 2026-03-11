@@ -1,19 +1,17 @@
 {
-    "mcpServers": {
-      "awslabs.billing-cost-management-mcp-server": {
-        "command": "uvx",
-        "args": [
-           "--from",
-           "awslabs.billing-cost-management-mcp-server@latest",
-           "awslabs.billing-cost-management-mcp-server.exe"
-        ],
-        "env": {
-          "FASTMCP_LOG_LEVEL": "ERROR",
-          "AWS_PROFILE": "houdiny-staging",
-          "AWS_REGION": "eu-central-1"
-        },
-        "disabled": false,
-        "autoApprove": []
-      }
+  "mcpServers": {
+    "awslabs.billing-cost-management-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "awslabs.billing-cost-management-mcp-server@latest",
+        "awslabs.billing-cost-management-mcp-server.exe"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": []
     }
   }
+}

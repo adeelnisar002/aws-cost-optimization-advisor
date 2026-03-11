@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -9,6 +9,71 @@ from config import settings
 from .tool_registry import Tool, tool_registry, categorize_tool_name
 
 logger = logging.getLogger(__name__)
+
+
+def _get_aws_config() -> Tuple[str, str, str, str]:
+    """Resolve (region, role_arn, profile, external_id) from request context (Flask g) or settings."""
+    region = settings.aws_region
+    role_arn = getattr(settings, "aws_role_arn", None) or ""
+    profile = (settings.aws_profile or "").strip()
+    external_id = getattr(settings, "aws_external_id", None) or ""
+    try:
+        from flask import g
+        if hasattr(g, "aws_region") and g.aws_region:
+            region = g.aws_region
+        if hasattr(g, "aws_role_arn"):
+            role_arn = g.aws_role_arn or ""
+        if hasattr(g, "aws_profile"):
+            profile = (g.aws_profile or "").strip()
+        if hasattr(g, "aws_external_id"):
+            external_id = g.aws_external_id or ""
+    except Exception:
+        pass
+    return (region, role_arn, profile, external_id)
+
+
+def _get_assumed_role_credentials(
+    region: str, role_arn: str, profile: str, external_id: str = ""
+) -> Optional[Dict[str, str]]:
+    """If role_arn is set, assume the customer role (SaaS) and return env vars for the MCP subprocess."""
+    if not (role_arn and role_arn.strip()):
+        return None
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+        # Use app credentials (no profile in SaaS) or local dev profile (e.g. cost-agent that assumes backend role)
+        session = boto3.Session(profile_name=profile if profile else None)
+        sts = session.client("sts", region_name=region or None)
+        params = {
+            "RoleArn": role_arn.strip(),
+            "RoleSessionName": "cost-analysis-mcp",
+        }
+        if external_id and external_id.strip():
+            params["ExternalId"] = external_id.strip()
+        resp = sts.assume_role(**params)
+        creds = resp.get("Credentials") or {}
+        return {
+            "AWS_ACCESS_KEY_ID": creds.get("AccessKeyId", ""),
+            "AWS_SECRET_ACCESS_KEY": creds.get("SecretAccessKey", ""),
+            "AWS_SESSION_TOKEN": creds.get("SessionToken", ""),
+        }
+    except ClientError as exc:
+        err_code = exc.response.get("Error", {}).get("Code", "")
+        err_msg = str(exc)
+        if err_code == "AccessDenied":
+            if "AssumeRole" in err_msg and "CostAgentBackendRole" in err_msg:
+                logger.warning(
+                    "AssumeRole failed (backend role not trusted by your credentials). "
+                    "If using profile that assumes CostAgentBackendRole, add your local IAM principal to that role's trust policy. See README 'Local development with assume-role profile'."
+                )
+            else:
+                logger.warning("Failed to assume role %s: %s", role_arn, exc)
+        else:
+            logger.warning("Failed to assume role %s: %s", role_arn, exc)
+        return None
+    except Exception as exc:
+        logger.warning("Failed to assume role %s: %s", role_arn, exc)
+        return None
 
 
 class MCPClient:
@@ -25,28 +90,52 @@ class MCPClient:
         self.server_key = server_key
         self._mcp: Optional[MultiServerMCPClient] = None
         self._tools_by_name: Dict[str, Any] = {}
+        self._last_config_key: Optional[Tuple[str, str, str]] = None  # (region, role_arn, external_id) for invalidation
 
     def _build_servers_config(self) -> Dict[str, Any]:
-        """Build MultiServerMCPClient config from aws_mcp.json."""
+        """Build MultiServerMCPClient config from aws_mcp.json and runtime AWS config (region, IAM role)."""
         config_path = Path(__file__).with_name("aws_mcp.json")
         logger.debug("Loading MCP server config from %s", config_path)
         data = json.loads(config_path.read_text(encoding="utf-8"))
         server_cfg = data["mcpServers"][self.server_key]
         logger.debug("Loaded config for server %s: command=%s args=%s", self.server_key, server_cfg.get("command"), server_cfg.get("args"))
 
+        base_env: Dict[str, str] = dict(server_cfg.get("env", {}))
+        region, role_arn, profile, external_id = _get_aws_config()
+
+        # Runtime env: region always; profile only when set (else use IAM role).
+        # If we inject assumed-role temp creds, ensure AWS_PROFILE is removed
+        # because botocore prioritizes explicit profile over env credentials.
+        base_env["AWS_REGION"] = region or "us-east-1"
+        if profile:
+            base_env["AWS_PROFILE"] = profile
+        # When profile is empty we omit AWS_PROFILE so the SDK uses default chain (app's task/instance role)
+
+        assumed = _get_assumed_role_credentials(region, role_arn, profile, external_id)
+        if assumed:
+            base_env.pop("AWS_PROFILE", None)
+            base_env.update(assumed)
+
         servers = {
             self.server_key: {
                 "command": server_cfg["command"],
                 "args": server_cfg.get("args", []),
-                "env": server_cfg.get("env", {}),
+                "env": base_env,
                 "transport": "stdio",
             }
         }
+        self._last_config_key = (region or "", role_arn or "", external_id or "")
         return servers
 
     async def connect(self) -> None:
-        if self._mcp is not None:
+        region, role_arn, _, external_id = _get_aws_config()
+        current_key = (region or "", role_arn or "", external_id or "")
+        if self._mcp is not None and self._last_config_key == current_key:
             return
+        if self._mcp is not None and self._last_config_key != current_key:
+            logger.info("AWS config changed (region/role); reconnecting MCP client")
+            self._mcp = None
+            self._tools_by_name = {}
 
         servers = self._build_servers_config()
         # Note: MultiServerMCPClient currently expects servers as positional arg
@@ -142,6 +231,32 @@ class MCPClient:
         # Ensure JSON-serializable dict on return
         if isinstance(result, dict):
             logger.debug("Tool %s returned keys: %s", tool_name, list(result.keys()))
+            # Some AWS Billing MCP operations return a JSON string in result[0].text.
+            # When upstream returns an error payload, surface it explicitly in logs.
+            try:
+                result_items = result.get("result")
+                if isinstance(result_items, list) and result_items:
+                    first_item = result_items[0]
+                    if isinstance(first_item, dict):
+                        text = first_item.get("text")
+                        if isinstance(text, str) and text.strip():
+                            parsed_text = json.loads(text)
+                            if isinstance(parsed_text, dict) and parsed_text.get("error_type"):
+                                logger.error(
+                                    (
+                                        "MCP tool %s returned error payload: "
+                                        "status=%s http_status=%s error_type=%s message=%s request_id=%s"
+                                    ),
+                                    tool_name,
+                                    parsed_text.get("status"),
+                                    parsed_text.get("http_status"),
+                                    parsed_text.get("error_type"),
+                                    parsed_text.get("message"),
+                                    parsed_text.get("request_id"),
+                                )
+            except Exception:
+                # Avoid failing tool calls due to best-effort diagnostics.
+                pass
             return result
         return {"result": result}
 
@@ -370,11 +485,11 @@ class MCPClient:
             return {"error": str(exc)}
 
     async def check_aws_credentials(self) -> Dict[str, Any]:
-        """Validate that AWS credentials/profile used by the MCP server are usable.
+        """Validate that AWS credentials used by the MCP server are usable.
 
-        This uses STS GetCallerIdentity with the *same* profile/region that the
-        Billing MCP server is configured with in aws_mcp.json. It returns a small
-        JSON structure summarizing validity and, when valid, the account/ARN.
+        Uses the same config as the MCP client: region/role from request or settings;
+        when profile is set uses it, else uses IAM role (task/instance); when role_arn
+        is set assumes that role. Returns validity and, when valid, account/ARN.
         """
         try:
             import boto3
@@ -385,51 +500,72 @@ class MCPClient:
                 "error": "boto3 not installed",
             }
 
-        # Read the MCP server env so we match exactly what the child process uses.
-        try:
-            config_path = Path(__file__).with_name("aws_mcp.json")
-            data = json.loads(config_path.read_text(encoding="utf-8"))
-            server_cfg = data["mcpServers"][self.server_key]
-            env_cfg: Dict[str, Any] = server_cfg.get("env", {})
-        except Exception as exc:
-            logger.error("Failed to load aws_mcp.json for credential check: %s", exc)
-            env_cfg = {}
-
-        profile = env_cfg.get("AWS_PROFILE") or settings.aws_profile
-        region = env_cfg.get("AWS_REGION") or settings.aws_region
+        region, role_arn, profile, external_id = _get_aws_config()
+        region = region or "us-east-1"
 
         try:
             session = boto3.Session(profile_name=profile if profile else None)
-            sts = session.client("sts", region_name=region if region else None)
-            identity = sts.get_caller_identity()
+            sts = session.client("sts", region_name=region)
+            if role_arn and role_arn.strip():
+                params = {
+                    "RoleArn": role_arn.strip(),
+                    "RoleSessionName": "cost-analysis-cred-check",
+                }
+                if external_id and external_id.strip():
+                    params["ExternalId"] = external_id.strip()
+                resp = sts.assume_role(**params)
+                creds = resp.get("Credentials") or {}
+                sts_assumed = session.client(
+                    "sts",
+                    region_name=region,
+                    aws_access_key_id=creds.get("AccessKeyId"),
+                    aws_secret_access_key=creds.get("SecretAccessKey"),
+                    aws_session_token=creds.get("SessionToken"),
+                )
+                identity = sts_assumed.get_caller_identity()
+            else:
+                identity = sts.get_caller_identity()
             result: Dict[str, Any] = {
                 "valid": True,
                 "account": identity.get("Account"),
                 "arn": identity.get("Arn"),
                 "user_id": identity.get("UserId"),
-                "profile": profile,
+                "profile": profile or "(IAM role)",
                 "region": region,
+                "role_arn": role_arn if role_arn else None,
             }
             logger.info(
-                "AWS credentials check succeeded for profile=%s account=%s arn=%s",
-                profile,
+                "AWS credentials check succeeded account=%s arn=%s",
                 result["account"],
                 result["arn"],
             )
             return result
         except Exception as exc:
+            err_msg = str(exc)
+            hint = None
+            if "AccessDenied" in err_msg and "AssumeRole" in err_msg and "CostAgentBackendRole" in err_msg:
+                hint = (
+                    "Your profile may assume CostAgentBackendRole; that role must trust your local IAM identity. "
+                    "See README: Local development with assume-role profile."
+                )
             logger.error(
-                "AWS credential check failed for profile %s in region %s: %s",
-                profile,
+                "AWS credential check failed region=%s role_arn=%s: %s",
                 region,
+                role_arn or "(none)",
                 exc,
             )
-            return {
+            if hint:
+                logger.info("Hint: %s", hint)
+            result = {
                 "valid": False,
-                "error": str(exc),
-                "profile": profile,
+                "error": err_msg,
+                "profile": profile or "(IAM role)",
                 "region": region,
+                "role_arn": role_arn if role_arn else None,
             }
+            if hint:
+                result["hint"] = hint
+            return result
 
 
 # Single Billing MCP client (Pricing MCP can be added later if needed).

@@ -433,6 +433,84 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
 
+    .aws-config-panel .panel-title {
+      margin: 0 0 4px;
+      font-family: "Manrope", sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .aws-config-fields {
+      display: grid;
+      gap: 14px;
+      max-width: 520px;
+    }
+
+    .field-group label {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .field-group .optional {
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .field-group .required {
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    .aws-connect-hint {
+      margin-bottom: 14px;
+      line-height: 1.55;
+    }
+
+    .aws-connect-hint code {
+      font-size: 12px;
+      background: rgba(0,0,0,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .input-text {
+      width: 100%;
+      max-width: 420px;
+      border: 1px solid #bfccff;
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-size: 14px;
+      background: #fbfcff;
+      color: var(--text);
+    }
+
+    .input-text:focus {
+      outline: none;
+      border-color: #7f9cff;
+      box-shadow: 0 0 0 3px rgba(72, 108, 255, 0.15);
+    }
+
+    .field-group-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .save-settings-btn {
+      background: #e7edff;
+      color: #243260;
+      border: 1px solid #d4deff;
+    }
+
+    .save-status {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .save-status.success { color: var(--ok); font-weight: 600; }
+    .save-status.error { color: var(--danger); }
+
     @media (max-width: 940px) {
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .rec-summary-grid { grid-template-columns: 1fr; }
@@ -459,6 +537,29 @@
     <div class="hero">
       <h1>AWS Cost Analysis Agent</h1>
       <p>Track spending, identify optimization opportunities, and generate practical remediation guidance in one place.</p>
+    </div>
+
+    <div class="panel aws-config-panel">
+      <h3 class="panel-title">Connect your AWS account</h3>
+      <p class="hint aws-connect-hint">Create an IAM role in your AWS account that allows this app to read cost and usage data (e.g. <code>ce:GetCostAndUsage</code>, <code>ce:GetCostForecast</code>), and configure the role to trust this app’s identity. Then paste the role ARN and region below. We’ll assume that role to access your account—no long‑lived keys are stored.</p>
+      <div class="aws-config-fields">
+        <div class="field-group">
+          <label for="aws-role-arn">Your IAM Role ARN <span class="required">(required)</span></label>
+          <input type="text" id="aws-role-arn" name="aws_role_arn" value="{{ aws_role_arn or '' }}" placeholder="e.g. arn:aws:iam::123456789012:role/MyCostAnalysisRole" class="input-text" />
+        </div>
+        <div class="field-group">
+          <label for="aws-region">AWS Region</label>
+          <input type="text" id="aws-region" name="aws_region" value="{{ aws_region or 'us-east-1' }}" placeholder="e.g. us-east-1, eu-central-1" class="input-text" />
+        </div>
+        <div class="field-group">
+          <label for="aws-external-id">External ID <span class="optional">(optional)</span></label>
+          <input type="text" id="aws-external-id" name="aws_external_id" value="{{ aws_external_id or '' }}" placeholder="If your role trust policy requires an external ID" class="input-text" />
+        </div>
+        <div class="field-group field-group-actions">
+          <button type="button" id="save-aws-settings-btn" class="save-settings-btn">Save & connect</button>
+          <span class="save-status" id="save-aws-status" aria-live="polite"></span>
+        </div>
+      </div>
     </div>
 
     <div class="panel">
@@ -606,6 +707,46 @@
       var analysisTypeInput = document.getElementById("analysis-type-input");
       var queryInput = document.getElementById("query");
       var quickButtons = Array.prototype.slice.call(document.querySelectorAll(".quick-btn"));
+
+      var saveAwsBtn = document.getElementById("save-aws-settings-btn");
+      var saveAwsStatus = document.getElementById("save-aws-status");
+      var awsRegionInput = document.getElementById("aws-region");
+      var awsRoleArnInput = document.getElementById("aws-role-arn");
+      var awsExternalIdInput = document.getElementById("aws-external-id");
+
+      if (saveAwsBtn && saveAwsStatus && awsRegionInput) {
+        saveAwsBtn.addEventListener("click", async function () {
+          saveAwsBtn.disabled = true;
+          saveAwsStatus.textContent = "";
+          saveAwsStatus.className = "save-status";
+          try {
+            var payload = {
+              aws_region: (awsRegionInput && awsRegionInput.value) ? awsRegionInput.value.trim() : "",
+              aws_role_arn: (awsRoleArnInput && awsRoleArnInput.value) ? awsRoleArnInput.value.trim() : "",
+              aws_external_id: (awsExternalIdInput && awsExternalIdInput.value) ? awsExternalIdInput.value.trim() : ""
+            };
+            var resp = await fetch("/api/settings", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            var data = await resp.json();
+            if (data.ok) {
+              saveAwsStatus.textContent = "Connected. You can run cost analysis now.";
+              saveAwsStatus.className = "save-status success";
+            } else {
+              saveAwsStatus.textContent = "Failed to save.";
+              saveAwsStatus.className = "save-status error";
+            }
+          } catch (e) {
+            saveAwsStatus.textContent = "Failed to save: " + e.message;
+            saveAwsStatus.className = "save-status error";
+          } finally {
+            saveAwsBtn.disabled = false;
+          }
+        });
+      }
+
       if (!form || !submitBtn || !loadingText || !recommendBtn) {
         return;
       }

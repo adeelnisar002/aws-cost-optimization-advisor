@@ -217,6 +217,16 @@ class CostDataProcessor:
                 r for r in mcp_response["ResultsByTime"] if isinstance(r, dict)
             ]
 
+        if not results_by_time:
+            # Help diagnose: empty can mean no cost data for period or unexpected MCP response shape
+            top_keys = list(mcp_response.keys()) if isinstance(mcp_response, dict) else []
+            parsed_keys = list(parsed_data.keys()) if isinstance(parsed_data, dict) else []
+            logger.debug(
+                "Empty ResultsByTime: mcp_response keys=%s parsed_data keys=%s",
+                top_keys,
+                parsed_keys,
+            )
+
         return results_by_time
 
     @staticmethod
