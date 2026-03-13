@@ -5,7 +5,7 @@
       "args": [
         "--from",
         "awslabs.billing-cost-management-mcp-server@latest",
-        "awslabs.billing-cost-management-mcp-server.exe"
+        "awslabs.billing-cost-management-mcp-server"
       ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
